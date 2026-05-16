@@ -1,8 +1,9 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 
-const apiKey = process.env.GEMINI_API_KEY || "";
-const genAI = new GoogleGenerativeAI(apiKey);
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY!,
+});
 
 export async function POST(req: Request) {
   console.log("--- API REQUEST STARTED ---");
@@ -18,32 +19,45 @@ export async function POST(req: Request) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    // Gunakan "gemini-1.5-flash" atau "gemini-1.5-flash-latest"
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash", 
-      generationConfig: { responseMimeType: "application/json" }
+    const prompt =
+      "Extract merchantName, date (YYYY-MM-DD), totalAmount (number), and currency from this receipt. Return JSON only.";
+
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                data: buffer.toString("base64"),
+                mimeType: file.type,
+              },
+            },
+            {
+              text: prompt,
+            },
+          ],
+        },
+      ],
     });
 
-    const prompt = "Extract merchantName, date (YYYY-MM-DD), totalAmount (number), and currency from this receipt. Return JSON.";
+    const text = result.text ?? "";
 
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          data: buffer.toString("base64"),
-          mimeType: file.type,
-        },
-      },
-      prompt,
-    ]);
+    console.log("Gemini RAW:", text);
 
-    const response = await result.response;
-    const text = response.text();
-    console.log("Gemini Response:", text);
+    let cleaned = text
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
 
-    return NextResponse.json(JSON.parse(text));
-
+    return NextResponse.json(JSON.parse(cleaned));
   } catch (error: any) {
     console.error("DETAILED ERROR:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+
+    return NextResponse.json(
+      { error: error.message },
+      { status: 500 }
+    );
   }
 }
